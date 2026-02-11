@@ -1,0 +1,10 @@
+{
+  "name": "llm-scripts",
+  "description": "Portable scripts for LLM workflows. Clone into any repo and run from your project root.",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "merge-to-md": "node llm-helpers/merge-to-md.js",
+    "merge-git-changed-to-md": "node llm-helpers/merge-git-changed-to-md.js"
+  }
+}

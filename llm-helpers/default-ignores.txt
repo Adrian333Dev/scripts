@@ -1,0 +1,12 @@
+# Default path segments excluded by scripts (e.g. merge-to-md.js)
+# Used for documentation; scripts have this list built-in.
+# Add your own via --except when running.
+.git
+node_modules
+temp
+tmp
+.tmp
+.temp
+vendor
+.venv
+__pycache__
