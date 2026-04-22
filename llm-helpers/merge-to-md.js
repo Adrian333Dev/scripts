@@ -141,6 +141,8 @@ const DEFAULT_EXCLUDE_SEGMENTS = [
   ".temp",
   "vendor", // common dependency dirs
   ".venv",
+  ".turbo",
+  "dist",
   "__pycache__",
 ];
 
