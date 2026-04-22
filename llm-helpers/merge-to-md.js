@@ -26,6 +26,7 @@
  *   --name <name>    Output basename without .md (overrides smart default)
  *   --except <list>  Comma-separated patterns to EXCLUDE (see Filtering below)
  *   --include <list> Comma-separated patterns to INCLUDE (only these; if omitted, all are included)
+ *   --assets <mode>  How to handle binary/asset files: ignore (default) | mention
  *   --git            Use git changed files (added/modified) as input; ignores path args
  *
  * =============================================================================
@@ -91,6 +92,10 @@
  *
  * --- Combine: folder + exclude + custom name ---
  *   node merge-to-md.js --except "*.test.ts" --name inngest-clean apps/web/src/inngest
+ *
+ * --- Exclude asset files by default (gif, png, mp4, etc.); use --assets mention to list them ---
+ *   node merge-to-md.js apps/web/src
+ *   node merge-to-md.js --assets mention apps/web/src
  */
 
 const fs = require("fs");
@@ -98,6 +103,35 @@ const path = require("path");
 const { execSync } = require("child_process");
 
 /** Path segments to exclude by default (e.g. .git, node_modules, temp folders). */
+/** Binary/asset extensions: never paste content; ignore by default or mention existence. */
+const ASSET_EXTENSIONS = new Set([
+  // images
+  ".gif", ".png", ".jpg", ".jpeg", ".webp", ".ico", ".bmp", ".tiff", ".tif",
+  // audio
+  ".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac",
+  // video
+  ".mp4", ".webm", ".mov", ".avi", ".mkv", ".m4v",
+  // fonts
+  ".woff", ".woff2", ".ttf", ".otf", ".eot",
+  // other binary
+  ".pdf", ".zip", ".tar", ".gz", ".7z", ".rar",
+]);
+
+/** OS metadata files: always excluded (no extension or binary, never useful in merged output). */
+const EXCLUDED_BASENAMES = new Set([
+  ".DS_Store",   // macOS
+  "Thumbs.db",   // Windows
+  "desktop.ini", // Windows
+]);
+
+function isAssetFile(relPath) {
+  return ASSET_EXTENSIONS.has(path.extname(relPath).toLowerCase());
+}
+
+function isExcludedBasename(relPath) {
+  return EXCLUDED_BASENAMES.has(path.basename(relPath));
+}
+
 const DEFAULT_EXCLUDE_SEGMENTS = [
   ".git",
   "node_modules",
@@ -114,6 +148,23 @@ const DEFAULT_EXCLUDE_SEGMENTS = [
 function isDefaultExcluded(relPath) {
   const segments = relPath.split(/[/\\]/).filter(Boolean);
   return segments.some((seg) => DEFAULT_EXCLUDE_SEGMENTS.includes(seg));
+}
+
+/**
+ * Get the path relative to the given input root. Used so we only apply default
+ * excludes to segments *within* the input (e.g. node_modules inside the repo),
+ * not to the path leading to it (e.g. "temp" in gamedev/temp/my-repo).
+ */
+function pathWithinRoot(filePath, inputRoot) {
+  const normalized = path.normalize(filePath).replace(/\\/g, "/");
+  const root = path.normalize(inputRoot).replace(/\\/g, "/");
+  if (!root) return normalized;
+  if (normalized === root) return "";
+  const prefix = root.endsWith("/") ? root : root + "/";
+  if (normalized.startsWith(prefix)) {
+    return normalized.slice(prefix.length);
+  }
+  return normalized; // not under this root
 }
 
 /** File extension to Markdown fenced code block language. */
@@ -254,9 +305,15 @@ function parseArgs() {
   let useGit = false;
   const pathArgs = [];
 
+  let assetsMode = "ignore"; // ignore | mention
+
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--out" && args[i + 1]) {
       outDir = path.resolve(cwd, args[i + 1]);
+      i++;
+    } else if (args[i] === "--assets" && args[i + 1]) {
+      const m = (args[i + 1] || "").toLowerCase();
+      if (m === "ignore" || m === "mention") assetsMode = m;
       i++;
     } else if (args[i] === "--name" && args[i + 1]) {
       outName = args[i + 1];
@@ -284,15 +341,17 @@ function parseArgs() {
     }
   }
 
-  return { outDir, outName, exceptList, includeList, useGit, pathArgs };
+  return { outDir, outName, exceptList, includeList, assetsMode, useGit, pathArgs };
 }
 
 function main() {
-  const { outDir, outName, exceptList, includeList, useGit, pathArgs } =
+  const { outDir, outName, exceptList, includeList, assetsMode, useGit, pathArgs } =
     parseArgs();
 
   let filePaths;
   let inputPathsForName;
+
+  let inputRoots = []; // paths relative to cwd; used to scope default excludes
 
   if (useGit) {
     filePaths = getGitChangedFiles();
@@ -307,10 +366,29 @@ function main() {
     }
     filePaths = collectPaths(pathArgs);
     inputPathsForName = pathArgs;
+    // Compute input roots so we only apply default excludes to paths *within* them
+    for (const arg of pathArgs) {
+      const resolved = path.resolve(cwd, arg);
+      if (fs.existsSync(resolved)) {
+        const stat = fs.statSync(resolved);
+        const rel = path.relative(cwd, resolved);
+        inputRoots.push(stat.isDirectory() ? rel : path.dirname(rel));
+      }
+    }
   }
 
   // Apply filters: default excludes → include (if any) → except
-  filePaths = filePaths.filter((rel) => !isDefaultExcluded(rel));
+  // When input roots exist, only exclude based on segments *within* those roots
+  filePaths = filePaths.filter((rel) => {
+    let pathToCheck = rel;
+    if (inputRoots.length > 0) {
+      const within = inputRoots
+        .map((root) => pathWithinRoot(rel, root))
+        .find((p) => p !== rel); // p !== rel means file is under that root
+      if (within !== undefined) pathToCheck = within;
+    }
+    return !isDefaultExcluded(pathToCheck);
+  });
   filePaths = filePaths.filter((rel) => isIncluded(rel, includeList));
   filePaths = filePaths.filter((rel) => !isExcluded(rel, exceptList));
 
@@ -320,6 +398,14 @@ function main() {
     if (!fs.existsSync(fullPath)) return false;
     return fs.statSync(fullPath).isFile();
   });
+
+  // Always exclude OS metadata files (.DS_Store, Thumbs.db, desktop.ini)
+  filePaths = filePaths.filter((rel) => !isExcludedBasename(rel));
+
+  // By default, exclude binary/asset files (gif, png, mp4, etc.)
+  if (assetsMode === "ignore") {
+    filePaths = filePaths.filter((rel) => !isAssetFile(rel));
+  }
 
   if (filePaths.length === 0) {
     console.log("No files to merge after filtering.");
@@ -332,10 +418,16 @@ function main() {
 
   for (const relPath of filePaths) {
     const fullPath = path.resolve(cwd, relPath);
-    const content = fs.readFileSync(fullPath, "utf8");
     const ext = path.extname(relPath);
     const lang = EXT_TO_LANG[ext] ?? "";
     const opening = lang ? lang + " " + relPath : relPath;
+
+    let content;
+    if (isAssetFile(relPath)) {
+      content = `(asset file: ${relPath})`;
+    } else {
+      content = fs.readFileSync(fullPath, "utf8");
+    }
     const block = "```" + opening + "\n" + content + "\n```\n";
     blocks.push(block);
   }
@@ -374,9 +466,8 @@ function main() {
   } else if (useGit) {
     resolvedName = "git-changed";
   } else if (inputPathsForName.length === 1) {
-    const first = inputPathsForName[0];
-    resolvedName =
-      first.replace(/\//g, "-").replace(/^-+|-+$/g, "") || "merged";
+    const first = path.normalize(inputPathsForName[0]).replace(/[/\\]/g, "-");
+    resolvedName = first.replace(/^\.+-*|-+$/g, "").replace(/-+/g, "-") || "merged";
   } else {
     resolvedName = "merged";
   }

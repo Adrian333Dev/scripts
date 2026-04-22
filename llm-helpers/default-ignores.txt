@@ -1,6 +1,9 @@
 # Default path segments excluded by scripts (e.g. merge-to-md.js)
 # Used for documentation; scripts have this list built-in.
 # Add your own via --except when running.
+#
+# Also always excluded (by basename): .DS_Store, Thumbs.db, desktop.ini
+#
 .git
 node_modules
 temp
