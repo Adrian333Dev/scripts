@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "merge-to-md": "node llm-helpers/merge-to-md.js",
-    "merge-git-changed-to-md": "node llm-helpers/merge-git-changed-to-md.js"
+    "merge":     "node run.js merge",
+    "merge-git": "node run.js merge-git"
   }
 }
