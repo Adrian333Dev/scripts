@@ -14,6 +14,11 @@ const COMMANDS = {
     args: ['--git'],
     description: 'Merge git changed files (added/modified) into a Markdown file',
   },
+  'optimize': {
+    script: 'img-helpers/optimize.mjs',
+    args: [],
+    description: 'Batch-optimize raster images to AVIF + WebP with responsive widths',
+  },
 };
 
 const scriptDir = path.resolve(__dirname);

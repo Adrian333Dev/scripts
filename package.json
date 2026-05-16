@@ -5,6 +5,13 @@
   "private": true,
   "scripts": {
     "merge":     "node run.js merge",
-    "merge-git": "node run.js merge-git"
+    "merge-git": "node run.js merge-git",
+    "optimize":  "node run.js optimize"
+  },
+  "dependencies": {
+    "sharp": "^0.34.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["sharp"]
   }
 }
