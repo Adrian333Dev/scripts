@@ -14,6 +14,12 @@ Most commands run with plain Node.js — no install needed. The `optimize` comma
 cd scripts && pnpm install      # or: npm install
 ```
 
+The `collect-serp` command also requires Playwright. After installing dependencies, install a Chromium browser if Playwright has not already done so:
+
+```bash
+cd scripts && pnpm exec playwright install chromium
+```
+
 ## Usage
 
 Run from your **project root** (the directory containing `scripts/`):
@@ -123,6 +129,129 @@ node scripts/run.js optimize --dry-run src/assets/scenes
 ```
 
 **Exit codes:** `0` success, `1` partial encode failure, `2` CLI / setup error.
+
+### collect-serp
+
+Collect organic Google search results using a visible Playwright browser. The command writes JSON-only per-query output files and saves progress after each batch.
+
+```bash
+node scripts/run.js collect-serp \
+  --query '"zoned out" lecture site:reddit.com' \
+  --max-pages 3 \
+  --out runs/test
+```
+
+From inside the `scripts/` directory:
+
+```bash
+pnpm collect-serp --query '"zoned out" lecture site:reddit.com' --max-pages 3 --out runs/test
+```
+
+#### collect-serp options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--query <query>` | required unless `--queries-file` is used | Google query to run; repeat for multiple queries |
+| `--queries-file <file>` | — | Newline-separated query file; blank lines and `#` comments are ignored |
+| `--max-pages <number>` | `10` | Maximum result pages to collect |
+| `--out <dir>` | `runs/<query-slug>` for one query, otherwise `runs/google-serp-run` | Output directory, relative to the caller's cwd |
+| `--profile-dir <dir>` | `scripts/.chrome-profile` | Persistent browser profile for cookies and search settings |
+| `--connect-cdp <url>` | — | Connect to an existing Chrome DevTools endpoint instead of launching an isolated browser |
+| `--locale <locale>` | `en-US` | Browser locale |
+| `--fields <list\|all>` | `title,url,source,displayUrl,snippet,rank` | Result fields to include |
+| `--delay-ms <min>:<max>` | `1000:3000` | Delay range between result pages |
+| `--fast` | off | Shorthand for `--delay-ms 100:500` |
+| `--page-concurrency <n>` | `1` | Load direct result pages in parallel tabs, from `1` to `8` |
+| `--open-only` | off | Open the first query in Playwright and keep the browser open for manual pagination testing |
+| `--verbose` | off | Log timing details and skipped extraction candidates |
+
+Recommended speed path:
+
+```bash
+node scripts/run.js collect-serp \
+  --query '"zoned out" lecture site:reddit.com' \
+  --max-pages 10 \
+  --page-concurrency 5 \
+  --delay-ms 0:0 \
+  --out runs/test-parallel \
+  --verbose
+```
+
+This opens direct Google `start=` pages in parallel tabs and merges results back in page order. Start with `2` or `3` if CAPTCHA pressure increases.
+
+**Output files:**
+
+```
+<out>/
+├── manifest.json
+└── queries/
+    └── 001-zoned-out-lecture-site-reddit-com-<hash>.json
+```
+
+Each query JSON file has this shape:
+
+```json
+{
+  "query": "\"zoned out\" lecture site:reddit.com",
+  "metadata": {
+    "maxPages": 3,
+    "pagesCollected": 3,
+    "totalUniqueResults": 24,
+    "stoppedReason": "max_pages"
+  },
+  "results": [
+    {
+      "title": "Example result title",
+      "url": "https://www.reddit.com/r/example/comments/abc/example_thread/",
+      "source": "Reddit",
+      "displayUrl": "https://www.reddit.com › r/example",
+      "snippet": "Nearby result text from the SERP.",
+      "rank": 1
+    }
+  ]
+}
+```
+
+If Google shows a CAPTCHA or unusual traffic page, the command pauses with:
+
+```txt
+CAPTCHA detected. Solve it in the browser. Collection will continue automatically, or press Enter here to re-check now.
+```
+
+Solve it manually in the visible browser. The command polls the page and continues automatically once the challenge clears; pressing Enter in the terminal forces an immediate re-check. This tool intentionally does not use proxy rotation, stealth plugins, or CAPTCHA-solving services.
+
+By default, `collect-serp` uses `scripts/.chrome-profile/`, a separate persistent Chrome automation profile. It does not attach to your everyday Chrome profile. That isolation avoids profile-locking and accidental changes to your normal browser state, while still preserving cookies and consent state between collector runs.
+
+To isolate browser/session delay from collector logic, open the query without collecting:
+
+```bash
+node scripts/run.js collect-serp \
+  --query '"zoned out" lecture site:reddit.com' \
+  --open-only \
+  --verbose
+```
+
+The browser stays open while the process runs. Manually click Google's pagination in that browser, then press `Ctrl+C` in the terminal when done.
+
+To compare against your real Chrome profile, start Chrome with a DevTools endpoint:
+
+```bash
+google-chrome --remote-debugging-port=9222
+```
+
+Then attach the script to it:
+
+```bash
+node scripts/run.js collect-serp \
+  --query '"zoned out" lecture site:reddit.com' \
+  --connect-cdp http://127.0.0.1:9222 \
+  --open-only \
+  --verbose
+```
+
+CDP mode opens a new tab in that Chrome session. Use it only when you explicitly want the tool to share your real browser state.
+
+More details: `serp-helpers/README.md`. Short LLM handoff: `serp-helpers/LLM.md`.
 
 ## Adding Scripts
 

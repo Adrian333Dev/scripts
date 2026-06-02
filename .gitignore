@@ -1,6 +1,14 @@
 # Dependencies (if any scripts add them later)
 node_modules/
 
+# Local browser automation state
+.chrome-profile/
+.playwright/
+
+# Local command output
+runs/
+*.tmp
+
 # OS
 .DS_Store
 Thumbs.db

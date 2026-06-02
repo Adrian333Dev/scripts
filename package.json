@@ -6,12 +6,12 @@
   "scripts": {
     "merge":     "node run.js merge",
     "merge-git": "node run.js merge-git",
-    "optimize":  "node run.js optimize"
+    "optimize":  "node run.js optimize",
+    "collect-serp": "node run.js collect-serp",
+    "test:serp": "node --test serp-helpers/__tests__/*.test.mjs"
   },
   "dependencies": {
+    "playwright": "^1.58.2",
     "sharp": "^0.34.0"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": ["sharp"]
   }
 }

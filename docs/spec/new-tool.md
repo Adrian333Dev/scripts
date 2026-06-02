@@ -1,197 +1,168 @@
-Build a local CLI tool called `google-serp-collector`.
+# Google SERP Collector Spec
 
-Goal:
-Given one Google search query, open a visible Chrome browser, run the query, collect as many organic Google search results as possible, paginate through results, pause for manual CAPTCHA if needed, and export results to JSON and CSV.
+Build a repo-integrated CLI tool exposed as `collect-serp`.
 
-Scope:
+## Goal
 
-- One input query.
-- No query generation.
-- No relevance scoring.
-- No result filtering except deduplication by normalized URL.
-- Collect title, URL, snippet, rank, page number, query, timestamp.
-- Use Playwright with visible/headed Chrome.
-- Use a persistent automation profile directory so cookies/search settings survive between runs.
-- Do not use CAPTCHA-solving services, proxy rotation, stealth plugins, or bot-evasion logic.
-- If CAPTCHA/unusual traffic page appears, pause and wait for the user to solve it manually in the visible browser.
+Given one or more Google search queries, open a visible Chrome/Chromium browser, collect organic Google search results, handle manual CAPTCHA if needed, and save JSON output continuously.
 
-Tech stack:
+## Scope
 
-- Node.js
-- TypeScript
-- Playwright
-- Commander.js or simple argv parsing
-- csv-stringify or manual CSV writer
-- Zod optional for output validation
+- Runs inside this existing `scripts` repo through `node run.js collect-serp`.
+- Plain JavaScript ES modules under `serp-helpers/`.
+- Writes structured per-query output.
+- Supports one query, repeated `--query`, or a newline-separated `--queries-file`.
+- Uses a persistent automation profile by default so cookies/search settings survive between runs.
+- Can optionally connect to an existing Chrome DevTools endpoint for diagnostics.
+- Does not use CAPTCHA-solving services, proxy rotation, stealth plugins, or bot-evasion logic.
 
-CLI shape:
+## CLI Shape
 
 ```bash
-pnpm collect \
-  --query '"zoned out" lecture (site:reddit.com inurl:comments|inurl:thread)' \
-  --max-pages 20 \
-  --out ./runs/zoned-out-lecture
+node run.js collect-serp \
+  --query '"zoned out" lecture site:reddit.com' \
+  --max-pages 10 \
+  --page-concurrency 5 \
+  --delay-ms 0:0 \
+  --out runs/test-parallel \
+  --verbose
 ```
 
-Project structure:
+Important options:
+
+| Option | Purpose |
+|--------|---------|
+| `--query`, `-q` | Query to collect; repeat for multiple queries |
+| `--queries-file` | Newline-separated query file |
+| `--max-pages` | Maximum SERP pages per query |
+| `--page-concurrency` | Load direct result-page URLs in parallel tabs, `1` to `8` |
+| `--delay-ms` / `--fast` | Sequential page pacing controls |
+| `--fields` | Select output result fields, or `all` |
+| `--open-only` | Open the query and keep the browser alive for manual testing |
+| `--connect-cdp` | Attach to an existing Chrome DevTools endpoint |
+
+## Output Structure
 
 ```txt
-google-serp-collector/
-  package.json
-  tsconfig.json
-  src/
-    cli.ts
-    collect.ts
-    google.ts
-    extract.ts
-    normalize.ts
-    output.ts
-    captcha.ts
-    types.ts
-  runs/
+<out>/
+├── manifest.json
+└── queries/
+    └── 001-zoned-out-lecture-site-reddit-com-<hash>.json
 ```
 
-Output files:
-
-```txt
-runs/<slug>/results.json
-runs/<slug>/results.csv
-runs/<slug>/meta.json
-```
-
-Result schema:
-
-```ts
-type SearchResult = {
-  query: string;
-  page: number;
-  rankOnPage: number;
-  globalRank: number;
-  title: string;
-  url: string;
-  displayUrl?: string;
-  snippet?: string;
-  collectedAt: string;
-};
-```
-
-Meta schema:
-
-```ts
-type RunMeta = {
-  query: string;
-  startedAt: string;
-  finishedAt: string;
-  maxPages: number;
-  pagesCollected: number;
-  totalRawResults: number;
-  totalUniqueResults: number;
-  stoppedReason:
-    | "max_pages"
-    | "no_next_page"
-    | "captcha_timeout"
-    | "manual_stop"
-    | "error";
-};
-```
-
-Implementation behavior:
-
-1. Parse CLI args.
-2. Create output directory.
-3. Launch Playwright Chromium in headed mode with:
-   - persistent profile directory: `./.chrome-profile`
-   - channel: `"chrome"` if available
-   - viewport: large desktop size
-   - locale: `"en-US"` by default
-
-4. Open `https://www.google.com/search?q=<encoded query>&num=10`.
-5. Wait for page load.
-6. If consent page appears, allow user to handle it manually or click a safe visible accept button only if obvious.
-7. Detect CAPTCHA/unusual traffic pages by checking for text like:
-   - “unusual traffic”
-   - “Our systems have detected”
-   - “I’m not a robot”
-   - `/sorry/` in URL
-
-8. If CAPTCHA appears:
-   - print message: “CAPTCHA detected. Solve it in the browser, then press Enter here.”
-   - wait for stdin Enter
-   - re-check whether normal results are visible
-
-9. Extract organic results from current SERP.
-10. Save progress after every page.
-11. Click next page:
-
-- prefer link with id `pnnext`
-- fallback to link text “Next”
-- fallback to URL parameter start += 10
-
-12. Stop when:
-
-- max pages reached
-- no next page exists
-- repeated CAPTCHA unresolved
-- extraction returns zero results twice
-
-13. Deduplicate by normalized final URL:
-
-- remove Google redirect wrapper if present
-- strip common tracking params: `utm_*`, `fbclid`, `gclid`
-- preserve Reddit comment/thread paths
-
-14. Write JSON, CSV, and meta.
-
-Organic result extraction strategy:
-
-- Google DOM changes often, so implement multiple fallback selectors.
-- Prefer collecting links inside visible result blocks.
-- Ignore:
-  - ads
-  - “People also ask”
-  - image packs
-  - videos unless they appear as normal organic links
-  - Google internal links
-  - cached/translate links
-
-- For each candidate result block:
-  - title: first visible h3 text
-  - url: nearest parent anchor href
-  - snippet: nearby visible text excluding title/url
-
-- Keep extraction defensive and log skipped candidates.
-
-Pacing:
-
-- Add delay between pages: 3–8 seconds.
-- Add small random delay before clicking next.
-- Never parallelize Google queries.
-- Save progress continuously.
-
-Useful scripts:
+Each query file contains one JSON object:
 
 ```json
 {
-  "scripts": {
-    "collect": "tsx src/cli.ts",
-    "typecheck": "tsc --noEmit",
-    "dev": "tsx src/cli.ts"
-  }
+  "query": "\"zoned out\" lecture site:reddit.com",
+  "metadata": {
+    "query": "\"zoned out\" lecture site:reddit.com",
+    "startedAt": "2026-06-01T12:00:00.000Z",
+    "finishedAt": "2026-06-01T12:03:00.000Z",
+    "maxPages": 10,
+    "pageConcurrency": 5,
+    "delayMs": { "min": 0, "max": 0 },
+    "pagesCollected": 10,
+    "totalRawResults": 96,
+    "totalUniqueResults": 84,
+    "stoppedReason": "max_pages"
+  },
+  "results": [
+    {
+      "title": "Example result title",
+      "url": "https://www.reddit.com/r/example/comments/abc/example_thread/",
+      "source": "Reddit",
+      "displayUrl": "https://www.reddit.com › r/example",
+      "snippet": "Nearby result text from the SERP.",
+      "rank": 1
+    }
+  ]
 }
 ```
 
-Acceptance test:
-Run:
+Default result fields:
 
-```bash
-pnpm collect --query '"zoned out" lecture site:reddit.com' --max-pages 3 --out ./runs/test
+- `title`
+- `url`
+- `source`
+- `displayUrl`
+- `snippet`
+- `rank`
+
+`--fields all` also includes provenance/debug fields such as page, rank on page, language, result position, Google data attributes, and collection timestamp.
+
+## Browser Behavior
+
+Default browser mode:
+
+- Playwright persistent context
+- headed browser
+- Chrome channel when available, Playwright Chromium fallback otherwise
+- profile directory: `scripts/.chrome-profile`
+- viewport: `1366x900`
+- locale: `en-US`
+
+Diagnostic modes:
+
+- `--open-only` loads the query and keeps the browser open for manual navigation testing.
+- `--connect-cdp <url>` attaches to an existing Chrome DevTools endpoint and opens a new tab.
+
+## CAPTCHA And Consent
+
+CAPTCHA/unusual-traffic detection checks:
+
+- `/sorry/` in the URL
+- `unusual traffic`
+- `Our systems have detected`
+- `I'm not a robot` / `I’m not a robot`
+
+When detected, the command prints:
+
+```txt
+CAPTCHA detected. Solve it in the browser. Collection will continue automatically, or press Enter here to re-check now.
 ```
 
-Expected:
+The command polls until the challenge clears. It never attempts to bypass CAPTCHA.
 
-- Opens visible Chrome.
-- Runs Google search.
-- Collects results from at least page 1.
-- Writes `results.json`, `results.csv`, and `meta.json`.
-- If CAPTCHA appears, script pauses and waits for manual user action.
-- No stealth, proxy, or CAPTCHA bypass code is added.
+## Extraction
+
+Organic extraction is defensive because Google markup changes often:
+
+- Prefer visible result blocks with a visible `h3` inside an anchor.
+- Ignore ads, People Also Ask, image packs, Google internal links, cache links, translate links, and empty titles.
+- Extract title, final URL, visible source, display URL, snippet, language, result position, and optional debug data attributes.
+- Deduplicate by normalized final URL.
+
+## Pagination And Speed
+
+Sequential mode:
+
+- Page 1 loads normally.
+- Later pages use direct `start=` URLs.
+- `--delay-ms` controls delay between sequential pages.
+
+Parallel-page mode:
+
+- `--page-concurrency N` opens direct result-page URLs in parallel tabs.
+- Results are merged back in page order so final ranks remain deterministic.
+- This overlaps Google's slow page requests and is the recommended speed workaround.
+- Start with `2` or `3`; `5` worked in manual testing but may increase CAPTCHA pressure.
+
+## Stop Reasons
+
+| Reason | Meaning |
+|--------|---------|
+| `max_pages` | Reached `--max-pages` |
+| `no_next_page` | No next page or repeated zero-result pages |
+| `captcha_timeout` | CAPTCHA did not clear |
+| `manual_stop` | User interrupted with `Ctrl+C` |
+| `error` | Unexpected failure after saving progress where possible |
+
+## Verification
+
+```bash
+node --check serp-helpers/collect-google.mjs
+node --check serp-helpers/google.mjs
+node run.js collect-serp --help
+pnpm test:serp
+```

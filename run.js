@@ -19,6 +19,11 @@ const COMMANDS = {
     args: [],
     description: 'Batch-optimize raster images to AVIF + WebP with responsive widths',
   },
+  'collect-serp': {
+    script: 'serp-helpers/collect-google.mjs',
+    args: [],
+    description: 'Collect organic Google results for one query with headed Playwright',
+  },
 };
 
 const scriptDir = path.resolve(__dirname);
