@@ -8,10 +8,15 @@
     "merge-git": "node run.js merge-git",
     "optimize":  "node run.js optimize",
     "collect-serp": "node run.js collect-serp",
-    "test:serp": "node --test serp-helpers/__tests__/*.test.mjs"
+    "compact-sources": "node run.js compact-sources",
+    "test:serp": "node --test serp-helpers/__tests__/*.test.mjs",
+    "test:site-fetcher": "node --test site-fetcher/__tests__/*.test.mjs"
   },
   "dependencies": {
+    "@mozilla/readability": "^0.6.0",
+    "jsdom": "^26.1.0",
     "playwright": "^1.58.2",
-    "sharp": "^0.34.0"
+    "sharp": "^0.34.0",
+    "turndown": "^7.2.0"
   }
 }

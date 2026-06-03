@@ -253,6 +253,129 @@ CDP mode opens a new tab in that Chrome session. Use it only when you explicitly
 
 More details: `serp-helpers/README.md`. Short LLM handoff: `serp-helpers/LLM.md`.
 
+### extract-sources
+
+Extract known URLs into a local Markdown research corpus. This command is intended to run after URL discovery, such as `collect-serp`, but it treats input URLs as authoritative and does not filter them.
+
+```bash
+node scripts/run.js extract-sources \
+  --url 'https://example.com/' \
+  --out runs/site-corpus \
+  --verbose
+```
+
+Test one URL:
+
+```bash
+node scripts/run.js extract-sources \
+  --url 'https://example.com/' \
+  --out runs/site-fetcher-single \
+  --force \
+  --verbose
+```
+
+Test one URL and keep the raw HTML artifact for debugging:
+
+```bash
+node scripts/run.js extract-sources \
+  --url 'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise' \
+  --out runs/site-fetcher-debug \
+  --force \
+  --debug-artifacts \
+  --verbose
+```
+
+From SERP output:
+
+```bash
+node scripts/run.js extract-sources \
+  --input runs/project/serp \
+  --out runs/project/corpus \
+  --max-urls 300
+```
+
+Current extraction path:
+
+```txt
+auto: direct HTTP -> Readability -> Reddit old fallback when applicable -> Jina fallback
+http: direct HTTP -> Readability -> Reddit old fallback when applicable
+jina: Jina Reader only
+```
+
+The command does not bypass CAPTCHA, login walls, or bot protection. Those URLs are recorded as `manual_required` when detected.
+
+#### extract-sources options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--url <url>` | — | URL to fetch; repeat for multiple URLs |
+| `--input <path>` | — | SERP output directory or JSON file |
+| `--urls-file <file>` | — | Newline-separated URL file; blank lines and `#` comments ignored |
+| `--out <dir>` | `runs/site-corpus` | Output corpus directory |
+| `--max-urls <number>` | — | Maximum deduped URLs to fetch |
+| `--method <method>` | `auto` | Extraction method: `auto`, `http`, or `jina` |
+| `--jina-api-key-env <var>` | — | Read Jina API key from environment variable |
+| `--concurrency <number>` | `3` | Parallel fetches |
+| `--timeout-ms <number>` | `20000` | Per-request timeout |
+| `--force` | off | Refetch URLs even when metadata already exists |
+| `--debug-artifacts` | off | Write raw extraction artifacts where supported |
+| `--verbose` | off | Log each URL status |
+
+**Output files:**
+
+```
+<out>/
+├── manifest.json
+├── sources/
+│   └── 001-example-title.md
+├── metadata/
+│   └── <sha256-url>.json
+├── failed/
+│   └── <sha256-url>.json
+└── artifacts/            # only with --debug-artifacts
+    └── <sha256-url>.html
+```
+
+More details: `site-fetcher/README.md`.
+
+### compact-sources
+
+Compact fetched source Markdown into a smaller LLM-ready corpus. This reads an existing `extract-sources` output directory and writes compacted Markdown without modifying the raw `sources/` files.
+
+```bash
+node scripts/run.js compact-sources \
+  --input runs/site-corpus \
+  --out runs/site-corpus-compact \
+  --verbose
+```
+
+Default output goes inside the input corpus:
+
+```bash
+node scripts/run.js compact-sources \
+  --input runs/site-fetcher-single
+```
+
+Use `--max-chars 0` to clean and dedupe without applying a per-source character cap:
+
+```bash
+node scripts/run.js compact-sources \
+  --input runs/site-corpus \
+  --max-chars 0
+```
+
+The compactor removes common navigation/social/shell lines, strips Markdown images by default, strips raw HTML tags/scripts, dedupes repeated blocks, and caps each compacted body at `12000` characters unless changed. CAPTCHA, login, and bot-verification pages are replaced with an explicit blocked-source placeholder instead of being treated as evidence.
+
+#### compact-sources options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--input <dir>` | — | Corpus directory containing `sources/*.md` |
+| `--out <dir>` | `<input>/compact` | Output directory |
+| `--max-chars <number>` | `12000` | Maximum compacted body characters per source; `0` disables cap |
+| `--keep-images` | off | Keep Markdown image lines |
+| `--verbose` | off | Log each compacted source |
+
 ## Adding Scripts
 
 1. Add the script file to a category folder (e.g. `img-helpers/optimize.mjs`)
