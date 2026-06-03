@@ -19,21 +19,6 @@ const COMMANDS = {
     args: [],
     description: 'Batch-optimize raster images to AVIF + WebP with responsive widths',
   },
-  'collect-serp': {
-    script: 'serp-helpers/collect-google.mjs',
-    args: [],
-    description: 'Collect organic Google results for one query with headed Playwright',
-  },
-  'extract-sources': {
-    script: 'site-fetcher/extract-sources.mjs',
-    args: [],
-    description: 'Extract discovered URLs into a Markdown research corpus',
-  },
-  'compact-sources': {
-    script: 'site-fetcher/compact-sources.mjs',
-    args: [],
-    description: 'Compact fetched source Markdown into a smaller LLM corpus',
-  },
 };
 
 const scriptDir = path.resolve(__dirname);
